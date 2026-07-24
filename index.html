@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>IO Game Stats</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='0' width='50' height='100' fill='%23ff6666'/%3E%3Crect x='50' width='50' height='100' fill='%23ff9966'/%3E%3Ctext x='50' y='72' font-size='70' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'%3ES%3C/text%3E%3C/svg%3E">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <style>;
+        * { margin: 0; padding: 0; box-sizing: border-box }
+        body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            overflow-x: hidden;
+        }
+        #app {
+            display: flex;
+            min-height: 100vh;
+        }
+        .panel {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        #cobbled-panel { background: #1a0a0a }
+        #flingy-panel { background: #1a100a }
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid;
+        }
+        #cobbled-panel .panel-header { border-color: #ff666644 }
+        #flingy-panel .panel-header { border-color: #ff996644 }
+        .panel-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+        .panel-title { font-size: 22px; font-weight: bold }
+        #cobbled-title { color: #ff6666 }
+        #flingy-title { color: #ff9966 }
+        .master-stats {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .stat-card {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        #cobbled-panel .stat-card { background: #ff666618; border: 1px solid #ff666633 }
+        #flingy-panel .stat-card { background: #ff996618; border: 1px solid #ff996633 }
+        .stat-value { font-size: 28px; font-weight: bold }
+        #cobbled-panel .stat-value { color: #ff6666 }
+        #flingy-panel .stat-value { color: #ff9966 }
+        .stat-label { font-size: 11px; opacity: 0.6; margin-top: 2px }
+        .server-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .server-list::-webkit-scrollbar { width: 4px }
+        #cobbled-panel .server-list::-webkit-scrollbar-thumb { background: #ff666644; border-radius: 2px }
+        #flingy-panel .server-list::-webkit-scrollbar-thumb { background: #ff996644; border-radius: 2px }
+        .server-card {
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #cobbled-panel .server-card { background: #ff66660d; border: 1px solid #ff66661a }
+        #cobbled-panel .server-card:hover { background: #ff66661a }
+        #flingy-panel .server-card { background: #ff99660d; border: 1px solid #ff99661a }
+        #flingy-panel .server-card:hover { background: #ff99661a }
+        .server-name { font-size: 14px; font-weight: bold }
+        .server-info { font-size: 11px; opacity: 0.7 }
+        .server-status {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .status-waiting { background: #ffc26633; color: #ffc266 }
+        .status-playing { background: #71bf4d33; color: #71bf4d }
+        .status-unknown { background: #ffffff15; color: #999 }
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0
+            background: #000000aa;
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        #overlay.show { display: flex }
+        #popup {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+        }
+        #popup.cobbled { border: 2px solid #ff6666 }
+        #popup.flingy { border: 2px solid #ff9966 }
+        #popup h2 { margin-bottom: 16px; font-size: 18px }
+        #popup.cobbled h2 { color: #ff6666 }
+        #popup.flingy h2 { color: #ff9966 }
+        #popup-close {
+            position: absolute;
+            top: 12px; right: 16px
+            background: none; border: none
+            color: #999; font-size: 20px
+            cursor: pointer;
+        }
+        #popup-close:hover { color: #fff }
+        .popup-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #ffffff10;
+            font-size: 13px;
+        }
+        .popup-key { opacity: 0.6 }
+        .popup-val { font-weight: bold; text-align: right; word-break: break-all }
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.4;
+            font-size: 13px;
+        }
+        .trash-btn {
+            background: none;
+            border: 1px solid #ffffff22;
+            color: #ffffff55;
+            font-size: 14px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+        .trash-btn:hover { color: #ff4444; border-color: #ff444466; background: #ff444411 }
+        #confirm-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #000000cc;
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        #confirm-overlay.show { display: flex }
+        #confirm-box {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            border: 2px solid #ff4444;
+        }
+        #confirm-box h3 { color: #ff4444; margin-bottom: 12px }
+        #confirm-box p { font-size: 13px; opacity: 0.7; margin-bottom: 20px }
+        #confirm-box button {
+            padding: 8px 20px;
+            margin: 0 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            border: 1px solid;
+        }
+        #confirm-yes { background: #ff444433; color: #ff4444; border-color: #ff444466 }
+        #confirm-yes:hover { background: #ff444455 }
+        #confirm-no { background: #ffffff15; color: #ccc; border-color: #ffffff33 }
+        #confirm-no:hover { background: #ffffff25 }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="cobbled-panel" class="panel">
+            <div class="panel-header">
+                <img class="panel-icon" id="cobbled-icon" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22184.359%22%20height%3D%22184.359%22%20viewBox%3D%220%200%20184.359%20184.359%22%3E%3Cdefs%3E%3CradialGradient%20id%3D%22a%22%20cx%3D%22291.429%22%20cy%3D%22133.254%22%20r%3D%2288.18%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f25557%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23e02d30%22%2F%3E%3C%2FradialGradient%3E%3CradialGradient%20id%3D%22b%22%20cx%3D%22228.308%22%20cy%3D%22193.389%22%20r%3D%2227.758%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f25557%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23e02d30%22%2F%3E%3C%2FradialGradient%3E%3CradialGradient%20id%3D%22c%22%20cx%3D%22282.752%22%20cy%3D%22138.945%22%20r%3D%2227.758%22%20gradientUnits%3D%22userSpaceOnUse%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23f25557%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23e02d30%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%3Cg%20stroke-miterlimit%3D%2210%22%3E%3Cpath%20fill%3D%22url(%23a)%22%20stroke%3D%22%23992b2d%22%20stroke-width%3D%228%22%20d%3D%22M151.865%20180.044c0-48.7%2039.479-88.18%2088.18-88.18%2048.7%200%2088.179%2039.48%2088.179%2088.18s-39.48%2088.18-88.18%2088.18-88.18-39.48-88.18-88.18z%22%20transform%3D%22translate(-147.865%20-87.865)%22%2F%3E%3Cpath%20fill%3D%22%23b82527%22%20d%3D%22M7.951%2092.535c0-24.207%2011.218%2025.015%2038.54%2053.455%2024.905%2025.926%2067.311%2030.33%2045.245%2030.33-46.273%200-83.785-37.512-83.785-83.785%22%2F%3E%3Cpath%20fill%3D%22%23e43639%22%20stroke%3D%22%23fff%22%20stroke-width%3D%228%22%20d%3D%22m79.286%20118.976-13.991-13.991%2029.327-29.328%2013.992%2013.991z%22%2F%3E%3Cpath%20fill%3D%22url(%23b)%22%20stroke%3D%22%23fff%22%20stroke-width%3D%228%22%20d%3D%22M191.403%20224.932c-9.78-11.805-8.14-29.304%203.665-39.084s29.304-8.14%2039.084%203.665%208.14%2029.303-3.665%2039.084c-11.805%209.78-29.303%208.14-39.084-3.665z%22%20transform%3D%22translate(-147.865%20-87.865)%22%2F%3E%3Cpath%20fill%3D%22%23b82527%22%20d%3D%22M42.041%20112.958c1.988-6.17-4.684%206.269%2011.948%2019.94%209.348%206.93%2017.001%208.094%2020.908%208.007-.026.012-.053.037-.065.047-22.272%209.203-37.926-12.049-32.794-27.958z%22%2F%3E%3Cpath%20fill%3D%22url(%23c)%22%20stroke%3D%22%23fff%22%20stroke-width%3D%228%22%20d%3D%22M245.848%20170.487c-9.78-11.805-8.14-29.303%203.665-39.084%2011.805-9.78%2029.303-8.14%2039.084%203.665%209.78%2011.805%208.14%2029.304-3.665%2039.084s-29.304%208.14-39.084-3.665z%22%20transform%3D%22translate(-147.865%20-87.865)%22%2F%3E%3Cpath%20fill%3D%22%23b82527%22%20d%3D%22M96.453%2058.546c1.987-6.17-4.685%206.269%2011.948%2019.94%209.348%206.93%2017.001%208.094%2020.908%208.007-.026.012-.054.037-.066.047-22.272%209.204-37.925-12.049-32.793-27.958z%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+                <div class="panel-title" id="cobbled-title">cobbled.io</div>
+            </div>
+            <div class="master-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="cobbled-servers">0</div>
+                    <div class="stat-label">Servers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="cobbled-players">?/0</div>
+                    <div class="stat-label">Players</div>
+                </div>
+            </div>
+            <div class="server-list" id="cobbled-list">
+                <div class="empty-state">No servers online</div>
+            </div>
+        </div>
+        <div id="flingy-panel" class="panel">
+            <div class="panel-header">
+                <img class="panel-icon" id="flingy-icon" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='184.359' height='184.359' viewBox='0 0 184.359 184.359'%3E%3Cdefs%3E%3CradialGradient id='a' cx='291.429' cy='133.254' r='88.18' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23f28755'/%3E%3Cstop offset='1' stop-color='%23e0662d'/%3E%3C/radialGradient%3E%3CradialGradient id='b' cx='210.409' cy='210.23' r='15.099' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23f28755'/%3E%3Cstop offset='1' stop-color='%23e0662d'/%3E%3C/radialGradient%3E%3CradialGradient id='c' cx='281.732' cy='140.709' r='35.091' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23f28755'/%3E%3Cstop offset='1' stop-color='%23e0662d'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cg stroke-miterlimit='10'%3E%3Cpath fill='url(%23a)' stroke='%23994e2b' stroke-width='8' d='M151.865 180.044c0-48.7 39.479-88.18 88.18-88.18 48.7 0 88.179 39.48 88.179 88.18s-39.48 88.18-88.18 88.18-88.18-39.48-88.18-88.18z' transform='translate(-147.865 -87.865)'/%3E%3Cpath fill='%23b85325' d='M7.951 92.535c0-24.207 11.218 25.015 38.54 53.455 24.905 25.926 67.311 30.33 45.245 30.33-46.273 0-83.785-37.512-83.785-83.785'/%3E%3Cpath fill='url(%23b)' d='M190.335 227.388c-5.32-6.421-4.428-15.94 1.993-21.26s15.94-4.428 21.26 1.994c5.32 6.42 4.428 15.94-1.994 21.26-6.42 5.32-15.94 4.427-21.26-1.994' transform='translate(-147.865 -87.865)'/%3E%3Cpath fill='%23b85325' d='M44.06 117.064c3.715-5.983-6.297 6.3 5.388 17.827 6.792 5.767 13.691 6.236 17.416 5.833-.028.013-.062.04-.076.05-23.82 10.513-32.327-8.246-22.741-23.675z'/%3E%3Cpath fill='url(%23c)' stroke='%23fff' stroke-width='8' d='M235.08 180.583c-12.365-14.923-10.29-37.044 4.633-49.408s37.043-10.29 49.407 4.633 10.29 37.044-4.633 49.408-37.044 10.29-49.408-4.633z' transform='translate(-147.865 -87.865)'/%3E%3Cpath fill='%23b85325' d='M84.443 62.323c2.562-7.957-6.042 8.085 15.408 25.716 12.056 8.937 21.926 10.438 26.964 10.327-.033.015-.069.047-.084.06-28.723 11.869-48.91-15.539-42.292-36.056z'/%3E%3Cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-width='8' d='m45.37 112.795 22.291 3.499 3.555 22.296-20.201 10.44-16.07-16.09zM67.506 116.25 88.374 95.38'/%3E%3C/g%3E%3C/svg%3E">
+                <div class="panel-title" id="flingy-title">flingy.io</div>
+            </div>
+            <div class="master-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="flingy-servers">0</div>
+                    <div class="stat-label">Servers</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="flingy-players">0</div>
+                    <div class="stat-label">Players</div>
+                </div>
+            </div>
+            <div class="server-list" id="flingy-list">
+                <div class="empty-state">No servers online</div>
+            </div>
+        </div>
+    </div>
+    <div id="overlay" onclick="closePopup(event)">
+        <div id="popup" onclick="event.stopPropagation()">
+            <button id="popup-close" onclick="closePopup()">✕</button>
+            <h2 id="popup-title"></h2>
+            <div id="popup-body"></div>
+        </div>
+    </div>
+    <div id="confirm-overlay" onclick="cancelDelete()">
+        <div id="confirm-box" onclick="event.stopPropagation()">
+            <h3>Delete Server?</h3>
+            <p id="confirm-text"></p>
+            <button id="confirm-yes" onclick="confirmDelete()">Delete</button>
+            <button id="confirm-no" onclick="cancelDelete()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        firebase.initializeApp({
+            apiKey: "AIzaSyA1nix9aa5qnzVxkUMneFeoVusElS1rjSc",
+            authDomain: "spinbase4096.firebaseapp.com",
+            databaseURL: "https://spinbase4096-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "spinbase4096",
+            storageBucket: "spinbase4096.firebasestorage.app",
+            messagingSenderId: "785225414290",
+            appId: "1:785225414290:web:597272c3d7cce0d2a984b"
+        })
+        database = firebase.database()
+
+        flingyAuthed = false
+        cobbledAuthed = false
+        pendingDelete = null
+
+        flingyEmail = localStorage.getItem('FLINGY_FIREBASE_EMAIL')
+        flingyPassword = localStorage.getItem('FLINGY_FIREBASE_PASSWORD')
+        cobbledEmail = localStorage.getItem('COBBLED_FIREBASE_EMAIL')
+        cobbledPassword = localStorage.getItem('COBBLED_FIREBASE_PASSWORD')
+
+        async function tryAuth() {
+            if (flingyEmail && flingyPassword) {
+                try {
+                    await firebase.auth().signInWithEmailAndPassword(flingyEmail, flingyPassword)
+                    console.log('Flingy Firebase authed')
+                } catch (err) {
+                    console.warn('Flingy auth failed:', err.message)
+                    if (cobbledEmail && cobbledPassword) {
+                        try {
+                            await firebase.auth().signInWithEmailAndPassword(cobbledEmail, cobbledPassword)
+                            console.log('Cobbled Firebase authed')
+                        } catch (err2) {
+                            console.warn('Cobbled auth failed:', err2.message)
+                        }
+                    }
+                }
+            } else if (cobbledEmail && cobbledPassword) {
+                try {
+                    await firebase.auth().signInWithEmailAndPassword(cobbledEmail, cobbledPassword)
+                    console.log('Cobbled Firebase authed')
+                } catch (err) {
+                    console.warn('Cobbled auth failed:', err.message)
+                }
+            }
+        }
+
+        firebase.auth().onAuthStateChanged(user => {
+            flingyAuthed = false
+            cobbledAuthed = false
+            if (user && user.email) {
+                if (flingyEmail && user.email == flingyEmail) flingyAuthed = true
+                else if (cobbledEmail && user.email == cobbledEmail) cobbledAuthed = true
+            }
+            updateMasterStats()
+        })
+
+        tryAuth()
+        setInterval(() => tryAuth(), 30*60*1000)
+
+        async function setKey(key, value, path, retry = true) {
+            try {
+                await database.ref(`${path}/${key}`).set(value)
+            } catch (err) {
+                let msg = (err.message || '').toLowerCase()
+                let code = (err.code || '').toLowerCase()
+                if (retry && (msg.includes('permission_denied') || code.includes('permission_denied'))) {
+                    console.warn('Firebase permission denied, re-authing and retrying...')
+                    await tryAuth()
+                    setKey(key, value, path, false)
+                } else {
+                    console.warn('Firebase set failed:', err.message || err.code)
+                }
+            }
+        }
+
+        async function getKey(key, path) {
+            let snapshot = await database.ref(`${path}/${key}`).once('value')
+            return snapshot.val()
+        }
+
+        function sendDiscordMessage(gamePath, message) {
+            let prefix = gamePath == 'cobbled/servers' ? 'COBBLED_' : 'FLINGY_'
+            let discordWebhook = localStorage.getItem(`${prefix}DISCORD_WEBHOOK`)
+            let stoatWebhook = localStorage.getItem(`${prefix}STOAT_WEBHOOK`)
+
+            if (discordWebhook) {
+                fetch(discordWebhook, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({content: message})
+                }).catch(error => console.log(`Discord error: ${error}`))
+            }
+            if (stoatWebhook) {
+                fetch(stoatWebhook, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({content: message})
+                }).catch(error => console.log(`Stoat error: ${error}`))
+            }
+        }
+
+        async function showConfirm(gamePath, serverID) {
+            let isFlingy = gamePath == 'flingy/servers'
+            let neededAuthed = isFlingy ? flingyAuthed : cobbledAuthed
+
+            if (!neededAuthed) {
+                let email = isFlingy ? flingyEmail : cobbledEmail
+                let password = isFlingy ? flingyPassword : cobbledPassword
+                let gameName = isFlingy ? 'flingy.io' : 'cobbled.io'
+                if (!email || !password) {
+                    alert(`No ${gameName} credentials found in localStorage`)
+                    return
+                }
+                try {
+                    await firebase.auth().signInWithEmailAndPassword(email, password)
+                    console.log(`Switched auth to ${gameName}`)
+                } catch (err) {
+                    console.warn(`Failed to login to ${gameName}:`, err.message)
+                    alert(`Failed to login to ${gameName}`)
+                    return
+                }
+            }
+
+            let name = serverID.replace(/^[^_]+_/, '')
+            document.getElementById('confirm-text').textContent = `Are you sure you want to delete "${name}"? This will permanently remove it from the server list.`
+            pendingDelete = {gamePath, serverID}
+            document.getElementById('confirm-overlay').classList.add('show')
+        }
+
+        function cancelDelete() {
+            pendingDelete = null
+            document.getElementById('confirm-overlay').classList.remove('show')
+        }
+
+        async function confirmDelete() {
+            if (!pendingDelete) return
+            let {gamePath, serverID} = pendingDelete
+            document.getElementById('confirm-overlay').classList.remove('show')
+            pendingDelete = null
+
+            let serverList = await getKey('serverList', gamePath)
+            if (!serverList || !Array.isArray(serverList)) serverList = serverList ? [serverList] : []
+            serverList = serverList.filter(s => s !== serverID)
+            await setKey('serverList', serverList, gamePath)
+
+            await setKey(`${serverID}/ULID`, null, gamePath)
+            await setKey(`${serverID}/signalling`, null, gamePath)
+            await setKey(`${serverID}/status`, null, gamePath)
+            await setKey(`${serverID}/playerCount`, null, gamePath)
+            await setKey(`${serverID}/config`, null, gamePath)
+            await setKey(`${serverID}/createdAt`, null, gamePath)
+
+            let shortName = serverID.replace(/^[^_]+_/, '')
+            let servers = gamePath == 'cobbled/servers' ? cobbledServers : flingyServers
+            let serverName = (servers[serverID] && servers[serverID].config && servers[serverID].config.serverName) || shortName
+            sendDiscordMessage(gamePath, `:red_circle: [${shortName}] **${serverName}** server manually removed from firebase`)
+        }
+
+        function colorsToHex(color) {
+            switch (color) {
+                case 'red': return '#ff6666'
+                case 'orange': return '#ff9966'
+                case 'yellow': return '#ffc266'
+                case 'lime': return '#87e65c'
+                case 'green': return '#71bf4d'
+                case 'blue': return '#6696ff'
+                case 'purple': return '#9966ff'
+                case 'pink': return '#fc66ff'
+                case 'white': return '#f2f2f2'
+                case 'special': {
+                    t = Date.now()/640
+                    start = [255,102,102]
+                    end = [255,128,166]
+                    factor = 0.5+0.5*Math.sin(t)
+                    r = Math.round(start[0]+(end[0]-start[0])*factor)
+                    g = Math.round(start[1]+(end[1]-start[1])*factor)
+                    b = Math.round(start[2]+(end[2]-start[2])*factor)
+                    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`
+                }
+                default: return '#ff00ff'
+            }
+        }
+
+        cobbledServers = {}
+        flingyServers = {}
+
+        function daysSince2000() {
+            let start = new Date('2000-01-01T00:00:00Z')
+            return (new Date()-start)/(1000*60*60*24)
+        }
+
+        function formatLifetime(serverLifetime, createdAt) {
+            if (serverLifetime == null) return 'Unknown'
+            if (createdAt != null) {
+                let closeTime = createdAt + serverLifetime*60*1000
+                let minutesLeft = (closeTime - Date.now())/(60*1000)
+                if (minutesLeft <= 0) return 'Expired'
+                let closeDate = new Date(closeTime)
+                let y = closeDate.getFullYear()
+                let mo = (closeDate.getMonth()+1).toString().padStart(2, '0')
+                let d = closeDate.getDate().toString().padStart(2, '0')
+                let h = closeDate.getHours().toString().padStart(2, '0')
+                let min = closeDate.getMinutes().toString().padStart(2, '0')
+                let dateStr = `${y}.${mo}.${d} ${h}:${min}`
+                let remainStr
+                let daysLeft = minutesLeft/1440
+                if (daysLeft >= 1) remainStr = `${Math.round(daysLeft)}d`
+                else if (minutesLeft >= 60) remainStr = `${Math.round(minutesLeft/60)}h`
+                else if (minutesLeft >= 1) remainStr = `${Math.round(minutesLeft)}m`
+                else remainStr = `${Math.round(minutesLeft*60)}s`
+                return `closes ${dateStr} (${remainStr})`
+            }
+            let minutesLeft = serverLifetime
+            if (minutesLeft <= 0) return 'Expired'
+            let closeDate = new Date(Date.now() + minutesLeft*60*1000)
+            let y = closeDate.getFullYear()
+            let mo = (closeDate.getMonth()+1).toString().padStart(2, '0')
+            let d = closeDate.getDate().toString().padStart(2, '0')
+            let h = closeDate.getHours().toString().padStart(2, '0')
+            let min = closeDate.getMinutes().toString().padStart(2, '0')
+            let dateStr = `${y}.${mo}.${d} ${h}:${min}`
+            let remainStr
+            let daysLeft = minutesLeft/1440
+            if (daysLeft >= 1) remainStr = `${Math.round(daysLeft)}d`
+            else if (minutesLeft >= 60) remainStr = `${Math.round(minutesLeft/60)}h`
+            else if (minutesLeft >= 1) remainStr = `${Math.round(minutesLeft)}m`
+            else remainStr = `${Math.round(minutesLeft*60)}s`
+            return `closes ${dateStr} (${remainStr})`
+        }
+
+        function renderServerList(panelId, servers, gamePath) {
+            let listEl = document.getElementById(`${panelId}-list`)
+            let ids = Object.keys(servers)
+            let isAuthed = flingyAuthed || cobbledAuthed
+            if (ids.length == 0) {
+                listEl.innerHTML = `<div class="empty-state">No servers online</div>`
+                return
+            }
+            ids.sort()
+            let html = ''
+            for (let i = 0; i < ids.length; i++) {
+                let id = ids[i]
+                let s = servers[id]
+                let name = id.replace(/^[^_]+_/, '')
+                let statusClass = 'status-unknown'
+                let statusText = '?'
+                if (s.status == '0') { statusClass = 'status-waiting'; statusText = 'Waiting' }
+                else if (s.status == '1') { statusClass = 'status-playing'; statusText = 'Playing' }
+                let pc = s.playerCount != null ? s.playerCount : '?'
+                let max = s.config ? s.config.playerLimit : '?'
+                let playerInfo = `${pc}/${max} players`
+                let trashHtml = ''
+                if (isAuthed) {
+                    trashHtml = `<button class="trash-btn" onclick="event.stopPropagation();showConfirm('${gamePath}','${id}')" title="Delete server">🗑</button>`
+                }
+                html += `<div class="server-card" onclick="showServerPopup('${gamePath}','${id}')">
+                    <div>
+                        <div class="server-name">${name}</div>
+                        <div class="server-info">${playerInfo} · ${formatLifetime(s.config ? s.config.serverLifetime : null, s.createdAt)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <div class="server-status ${statusClass}">${statusText}</div>
+                        ${trashHtml}
+                    </div>
+                </div>`
+            }
+            listEl.innerHTML = html
+        }
+
+        function updateMasterStats() {
+            let cobbledIds = Object.keys(cobbledServers)
+            let flingyIds = Object.keys(flingyServers)
+            document.getElementById('cobbled-servers').textContent = cobbledIds.length
+            document.getElementById('flingy-servers').textContent = flingyIds.length
+            let cobbledPlayers = 0, cobbledMax = 0
+            for (let i = 0; i < cobbledIds.length; i++) {
+                let s = cobbledServers[cobbledIds[i]]
+                if (s.playerCount != null) cobbledPlayers += s.playerCount
+                if (s.config) cobbledMax += s.config.playerLimit || 0
+            }
+            document.getElementById('cobbled-players').textContent = `${cobbledPlayers}/${cobbledMax}`
+            let flingyPlayers = 0, flingyMax = 0
+            for (let i = 0; i < flingyIds.length; i++) {
+                let s = flingyServers[flingyIds[i]]
+                if (s.playerCount != null) flingyPlayers += s.playerCount
+                if (s.config) flingyMax += s.config.playerLimit || 0
+            }
+            document.getElementById('flingy-players').textContent = `${flingyPlayers}/${flingyMax}`
+            renderServerList('cobbled', cobbledServers, 'cobbled/servers')
+            renderServerList('flingy', flingyServers, 'flingy/servers')
+        }
+
+        function showServerPopup(gamePath, serverID) {
+            let s
+            if (gamePath == 'cobbled/servers') s = cobbledServers[serverID]
+            else s = flingyServers[serverID]
+            if (!s) return
+            let popup = document.getElementById('popup')
+            popup.className = gamePath == 'cobbled/servers' ? 'cobbled' : 'flingy'
+            let name = serverID.replace(/^[^_]+_/, '')
+            document.getElementById('popup-title').textContent = name
+            let rows = [
+                ['Server ID', serverID],
+                ['ULID', s.ULID || 'Unknown'],
+                ['Signalling', s.signalling || 'Unknown'],
+                ['Status', s.status == '0' ? 'Waiting' : s.status == '1' ? 'Playing' : 'Unknown']
+            ]
+            if (s.playerCount != null) rows.push(['Players', s.playerCount])
+            if (s.config) {
+                let c = s.config
+                if (c.playerLimit != null) rows.push(['Player Limit', c.playerLimit])
+                if (c.borderSize != null) rows.push(['Border Size', c.borderSize])
+                if (c.serverLifetime != null) rows.push(['Lifetime', `${formatLifetime(c.serverLifetime)} (${Math.round(c.serverLifetime/1440)}d total)`])
+                if (c.gamemode != null) rows.push(['Gamemode', c.gamemode])
+                if (c.achievementsEnabled != null) rows.push(['Achievements', c.achievementsEnabled ? 'Yes' : 'No'])
+                if (c.startingLevel != null) rows.push(['Starting Level', c.startingLevel])
+                if (c.maxLevel != null) rows.push(['Max Level', c.maxLevel])
+                if (c.xpMultiplier != null) rows.push(['XP Multiplier', `${c.xpMultiplier}x`])
+                if (c.hpMultiplier != null) rows.push(['HP Multiplier', `${c.hpMultiplier}x`])
+                if (c.bossSpawning != null) rows.push(['Boss Spawning', c.bossSpawning ? 'Yes' : 'No'])
+                if (c.eventSpawning != null) rows.push(['Event Spawning', c.eventSpawning ? 'Yes' : 'No'])
+                if (c.rockDensity != null) rows.push(['Rock Density', c.rockDensity])
+                if (c.boulderDensity != null) rows.push(['Boulder Density', c.boulderDensity])
+                if (c.ironChance != null) rows.push(['Iron Chance', `1/${c.ironChance}`])
+                if (c.goldChance != null) rows.push(['Gold Chance', `1/${c.goldChance}`])
+                if (c.diamondChance != null) rows.push(['Diamond Chance', `1/${c.diamondChance}`])
+                if (c.crimsonChance != null) rows.push(['Crimson Chance', `1/${c.crimsonChance}`])
+                if (c.whitelist && c.whitelist.length > 0) rows.push(['Whitelist', `${c.whitelist.length} players`])
+            }
+            let body = ''
+            for (let i = 0; i < rows.length; i++) {
+                body += `<div class="popup-row"><span class="popup-key">${rows[i][0]}</span><span class="popup-val">${rows[i][1]}</span></div>`
+            }
+            document.getElementById('popup-body').innerHTML = body
+            document.getElementById('overlay').classList.add('show')
+        }
+
+        function closePopup(e) {
+            if (e && e.target != document.getElementById('overlay')) return
+            document.getElementById('overlay').classList.remove('show')
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key == 'Escape') {
+                document.getElementById('overlay').classList.remove('show')
+                cancelDelete()
+            }
+        })
+
+        // --- cobbled.io listeners ---
+        database.ref('cobbled/servers/serverList').on('value', snapshot => {
+            let list = snapshot.val()
+            if (!list || !Array.isArray(list)) list = list ? [list] : []
+            let oldIds = Object.keys(cobbledServers)
+            for (let i = 0; i < oldIds.length; i++) {
+                if (!list.includes(oldIds[i])) {
+                    database.ref(`cobbled/servers/${oldIds[i]}/ULID`).off()
+                    database.ref(`cobbled/servers/${oldIds[i]}/signalling`).off()
+                    database.ref(`cobbled/servers/${oldIds[i]}/playerCount`).off()
+                    database.ref(`cobbled/servers/${oldIds[i]}/createdAt`).off()
+                    database.ref(`cobbled/servers/${oldIds[i]}/config`).off()
+                    delete cobbledServers[oldIds[i]]
+                }
+            }
+            for (let i = 0; i < list.length; i++) {
+                let id = list[i]
+                if (!cobbledServers[id]) {
+                    cobbledServers[id] = {status: '?', ULID: '?', signalling: '?', playerCount: null, config: null, createdAt: null}
+                    database.ref(`cobbled/servers/${id}/ULID`).on('value', snap => {
+                        if (cobbledServers[id]) cobbledServers[id].ULID = snap.val() || '?'
+                        updateMasterStats()
+                    })
+                    database.ref(`cobbled/servers/${id}/signalling`).on('value', snap => {
+                        if (cobbledServers[id]) cobbledServers[id].signalling = snap.val() || '?'
+                        updateMasterStats()
+                    })
+                    database.ref(`cobbled/servers/${id}/playerCount`).on('value', snap => {
+                        if (cobbledServers[id]) cobbledServers[id].playerCount = Number(snap.val()) || 0
+                        updateMasterStats()
+                    })
+                    database.ref(`cobbled/servers/${id}/createdAt`).on('value', snap => {
+                        if (cobbledServers[id]) cobbledServers[id].createdAt = Number(snap.val()) || null
+                        updateMasterStats()
+                    })
+                    database.ref(`cobbled/servers/${id}/config`).on('value', snap => {
+                        let val = snap.val()
+                        if (cobbledServers[id]) {
+                            try { cobbledServers[id].config = JSON.parse(val) } catch { cobbledServers[id].config = null }
+                        }
+                        updateMasterStats()
+                    })
+                }
+            }
+            updateMasterStats()
+        })
+
+        // --- flingy.io listeners ---
+        database.ref('flingy/servers/serverList').on('value', snapshot => {
+            let list = snapshot.val()
+            if (!list || !Array.isArray(list)) list = list ? [list] : []
+            let oldIds = Object.keys(flingyServers)
+            for (let i = 0; i < oldIds.length; i++) {
+                if (!list.includes(oldIds[i])) {
+                    database.ref(`flingy/servers/${oldIds[i]}/ULID`).off()
+                    database.ref(`flingy/servers/${oldIds[i]}/signalling`).off()
+                    database.ref(`flingy/servers/${oldIds[i]}/status`).off()
+                    database.ref(`flingy/servers/${oldIds[i]}/playerCount`).off()
+                    database.ref(`flingy/servers/${oldIds[i]}/createdAt`).off()
+                    database.ref(`flingy/servers/${oldIds[i]}/config`).off()
+                    delete flingyServers[oldIds[i]]
+                }
+            }
+            for (let i = 0; i < list.length; i++) {
+                let id = list[i]
+                if (!flingyServers[id]) {
+                    flingyServers[id] = {status: '?', ULID: '?', signalling: '?', playerCount: null, config: null, createdAt: null}
+                    database.ref(`flingy/servers/${id}/ULID`).on('value', snap => {
+                        if (flingyServers[id]) flingyServers[id].ULID = snap.val() || '?'
+                        updateMasterStats()
+                    })
+                    database.ref(`flingy/servers/${id}/signalling`).on('value', snap => {
+                        if (flingyServers[id]) flingyServers[id].signalling = snap.val() || '?'
+                        updateMasterStats()
+                    })
+                    database.ref(`flingy/servers/${id}/status`).on('value', snap => {
+                        if (flingyServers[id]) flingyServers[id].status = snap.val() || '?'
+                        updateMasterStats()
+                    })
+                    database.ref(`flingy/servers/${id}/playerCount`).on('value', snap => {
+                        if (flingyServers[id]) flingyServers[id].playerCount = Number(snap.val()) || 0
+                        updateMasterStats()
+                    })
+                    database.ref(`flingy/servers/${id}/createdAt`).on('value', snap => {
+                        if (flingyServers[id]) flingyServers[id].createdAt = Number(snap.val()) || null
+                        updateMasterStats()
+                    })
+                    database.ref(`flingy/servers/${id}/config`).on('value', snap => {
+                        let val = snap.val()
+                        if (flingyServers[id]) {
+                            try { flingyServers[id].config = JSON.parse(val) } catch { flingyServers[id].config = null }
+                        }
+                        updateMasterStats()
+                    })
+                }
+            }
+            updateMasterStats()
+        })
+    </script>
+</body>
+</html>
